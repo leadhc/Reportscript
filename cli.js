@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { probeTarget, registrableDomain } = require('./lib/probe');
-const { resolveDns } = require('./lib/net');
+const { resolveDns, setAbortSignal, isAborted } = require('./lib/net');
 const { whoisLookup } = require('./lib/whois');
 const { beianLookup } = require('./lib/beian');
 const { loadTerrain, matchTerrain } = require('./lib/terrain');
@@ -58,16 +58,29 @@ function uniqueOutDir(base) {
 
 // ── Stage 隔离 ─────────────────────────────────────────────────
 
+/** 构造一个可被上层识别的「已取消」错误。 */
+function abortError() {
+  const e = new Error('已取消取证');
+  e.name = 'AbortError';
+  e.aborted = true;
+  return e;
+}
+
 /**
- * 执行一个阶段：永不抛异常，返回 [value, error?]。
- * 失败时写 null 进 report.json 让后续阶段优雅降级。
+ * 执行一个阶段：普通失败永不抛异常，返回 [value, error?]（失败时写 null 让后续降级）。
+ * 但【取消】例外：一旦中止信号触发，立即抛 AbortError 中断整条流水线。
  */
 function stage(name, fn) {
   const t0 = Date.now();
   return Promise.resolve()
-    .then(fn)
-    .then(v => { ok(`${name} 完成（${Date.now() - t0}ms）`); return [v, null]; })
+    .then(() => { if (isAborted()) throw abortError(); return fn(); })
+    .then(v => {
+      if (isAborted()) throw abortError();
+      ok(`${name} 完成（${Date.now() - t0}ms）`);
+      return [v, null];
+    })
     .catch(e => {
+      if (isAborted() || (e && e.name === 'AbortError')) throw abortError();
       const msg = (e && e.message) ? String(e.message).slice(0, 160) : String(e);
       fail(`${name} 失败：${msg}`);
       return [null, msg];
@@ -119,7 +132,16 @@ async function cmdProbe(inputUrl) {
 
 // ── 主流程 ─────────────────────────────────────────────────────
 
-async function runFull(inputUrl, opts) {
+async function runFull(inputUrl, opts = {}) {
+  setAbortSignal(opts.signal || null);
+  try {
+    return await runFullInner(inputUrl, opts);
+  } finally {
+    setAbortSignal(null);
+  }
+}
+
+async function runFullInner(inputUrl, opts) {
   const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   const input = new URL(inputUrl);
   const domainPart = registrableDomain(input.hostname);

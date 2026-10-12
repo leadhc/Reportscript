@@ -224,7 +224,11 @@ let runningJobId = null;
 
 function startJob(url, opts) {
   const id = crypto.randomBytes(8).toString('hex');
-  const job = { id, url, opts, status: 'running', lines: [], subs: new Set(), startedAt: Date.now(), result: null, error: null };
+  const controller = new AbortController();
+  const job = {
+    id, url, opts, status: 'running', lines: [], subs: new Set(),
+    startedAt: Date.now(), result: null, error: null, controller,
+  };
   jobs.set(id, job);
   runningJobId = id;
 
@@ -234,21 +238,27 @@ function startJob(url, opts) {
   });
 
   Promise.resolve()
-    .then(() => runFull(url, opts))
+    .then(() => runFull(url, { ...opts, signal: controller.signal }))
     .then(res => {
       job.status = 'done';
       job.result = summarizeDir(res.outDir);
       job.result.failures = res.failures || [];
     })
     .catch(e => {
-      job.status = 'error';
-      job.error = String((e && e.message) || e);
+      if (controller.signal.aborted) {
+        job.status = 'cancelled';
+        job.error = '已取消取证';
+      } else {
+        job.status = 'error';
+        job.error = String((e && e.message) || e);
+      }
     })
     .finally(() => {
       setLogSink(null);
       if (runningJobId === id) runningJobId = null;
       for (const s of job.subs) { try { s(null); } catch { /* ignore */ } }
       job.subs.clear();
+      job.controller = null;
     });
 
   return id;
@@ -367,6 +377,21 @@ const server = http.createServer(async (req, res) => {
       };
       const id = startJob(parsed.href, opts);
       sendJson(res, 200, { jobId: id });
+      return;
+    }
+
+    // /api/job/:id/cancel
+    m = pathname.match(/^\/api\/job\/([a-f0-9]+)\/cancel$/);
+    if (m && method === 'POST') {
+      const job = jobs.get(m[1]);
+      if (!job) { sendJson(res, 404, { error: '任务不存在' }); return; }
+      if (job.status === 'running' && job.controller) {
+        const line = '  ⛔ 用户取消取证\n';
+        job.lines.push(line);
+        for (const s of job.subs) { try { s(line); } catch { /* ignore */ } }
+        job.controller.abort();
+      }
+      sendJson(res, 200, { ok: true, status: job.status });
       return;
     }
 

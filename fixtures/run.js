@@ -314,11 +314,15 @@ test('信件组装（模板 B）：骨架在位 / 槽位填齐 / 主题行含双
     // 正文里 A 页 URL 原样保留（含投放参数）
     contains(md, report.input.url);
     // 底档：B 页 URL 必须脱 query，正文不得出现 B 页的 token 参数
-    const body = md.split('## 正文（复制以下内容到邮件正文）')[1].split('## 发送前当场重测')[0];
+    const body = md.split('## 正文（复制以下内容到邮件正文）')[1].split('## 取证底档')[0];
     contains(body, 'https://nfd109.example-b.com');
     assert.ok(!body.includes('nfd109.example-b.com/?'), 'B 页 URL 必须脱 query（不得带投放参数）');
     // A 页 URL 原样保留：参数只应随 A 页 URL 出现，不得被单独点名
     assert.ok(body.includes(report.input.url), 'A 页 URL 应原样保留投放参数');
+    // 举报信只保留正文 + 底档：重测/自检两节已按产品要求移除
+    assert.ok(!md.includes('发送前当场重测'), '举报信不应再含「发送前重测」节');
+    assert.ok(!md.includes('发送前自检'), '举报信不应再含「发送前自检」节');
+    contains(md, '## 取证底档');
     // 取证底档：DNS 行应能解析出输入域 CNAME 与落地域 IP（回归 dns 键名 bug）
     contains(md, 'all.example-a.com.a1.initcc.com');
     contains(md, '101.71.160.100');

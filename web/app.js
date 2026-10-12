@@ -96,13 +96,25 @@ $$('.tab').forEach(t => t.addEventListener('click', () => {
   if (v === 'templates') loadTemplates();
 }));
 
-// ── 取证 ───────────────────────────────────────────────────────
+// ── 取证（按钮三态：开始取证 / 取消取证 / 完成取证） ────────────
 let evtSource = null;
+let runState = 'idle';   // idle | running | done
+let currentJobId = null;
 
-$('#run-form').addEventListener('submit', async e => {
-  e.preventDefault();
+function setRunState(state) {
+  runState = state;
+  const b = $('#run-btn');
+  b.dataset.state = state;
+  b.disabled = false;
+  b.classList.remove('primary', 'danger', 'success');
+  if (state === 'running') { b.textContent = '取消取证'; b.classList.add('danger'); }
+  else if (state === 'done') { b.textContent = '完成取证'; b.classList.add('success'); }
+  else { b.textContent = '开始取证'; b.classList.add('primary'); }
+}
+
+async function startRun() {
   const url = $('#url').value.trim();
-  if (!url) return;
+  if (!url) { $('#run-status').textContent = '请先填 URL'; return; }
   $('#run-log').textContent = '';
   $('#result').innerHTML = '';
   $('#run-status').textContent = '提交中…';
@@ -117,14 +129,24 @@ $('#run-form').addEventListener('submit', async e => {
         beianRemote: $('#opt-beian').checked,
       }),
     });
+    currentJobId = r.jobId;
+    setRunState('running');
     openSSE(r.jobId);
   } catch (err) {
     $('#run-status').textContent = '失败：' + err.message;
+    setRunState('idle');
   }
-});
+}
+
+async function cancelRun() {
+  if (!currentJobId) { setRunState('idle'); return; }
+  $('#run-status').textContent = '正在取消…';
+  try { await api('/api/job/' + currentJobId + '/cancel', { method: 'POST' }); }
+  catch (err) { $('#run-status').textContent = '取消失败：' + err.message; }
+}
 
 function openSSE(jobId) {
-  $('#run-status').textContent = '取证中…（可直接离开，结果会存到报告目录）';
+  $('#run-status').textContent = '取证中…（可点「取消取证」中止）';
   const log = $('#run-log');
   evtSource = new EventSource('/api/job/' + jobId + '/events');
   evtSource.onmessage = ev => {
@@ -136,24 +158,50 @@ function openSSE(jobId) {
     try {
       const job = await api('/api/job/' + jobId);
       if (job.status === 'done') {
-        $('#run-status').textContent = '完成';
+        $('#run-status').textContent = '取证完成';
         renderResult(job.result);
+        setRunState('done');
         loadHistory();
+      } else if (job.status === 'cancelled') {
+        $('#run-status').textContent = '已取消取证';
+        setRunState('idle');
       } else {
         $('#run-status').textContent = '失败：' + (job.error || '未知错误');
         renderResult(job.result || { error: job.error });
+        setRunState('idle');
       }
     } catch (err) {
       $('#run-status').textContent = '读取结果失败：' + err.message;
+      setRunState('idle');
+    } finally {
+      currentJobId = null;
     }
   });
   evtSource.onerror = () => {
-    // 连接中断时浏览器会自动重连；若彻底关闭则回退到轮询
     if (evtSource && evtSource.readyState === EventSource.CLOSED) {
-      $('#run-status').textContent = '连接中断，请刷新后到「历史报告」查看。';
+      $('#run-status').textContent = '连接中断，请到「历史报告」查看。';
+      setRunState('idle');
     }
   };
 }
+
+// 按钮按状态派发
+$('#run-btn').addEventListener('click', () => {
+  if (runState === 'idle') startRun();
+  else if (runState === 'running') cancelRun();
+  else if (runState === 'done') setRunState('idle'); // 回到「开始取证」，便于接着跑下一个
+});
+
+// 表单回车 = 开始取证（仅 idle 时）
+$('#run-form').addEventListener('submit', e => {
+  e.preventDefault();
+  if (runState === 'idle') startRun();
+});
+
+// 改动 URL 时，若处「完成」态则回到「开始取证」
+$('#url').addEventListener('input', () => { if (runState === 'done') setRunState('idle'); });
+
+setRunState('idle');
 
 // ── 结果渲染 ───────────────────────────────────────────────────
 function renderResult(s) {
