@@ -1,0 +1,87 @@
+:root{
+  --bg:#f5f6f8; --panel:#fff; --line:#e3e6ea; --text:#1f2329; --muted:#7a828c;
+  --primary:#2563eb; --primary-d:#1d4ed8; --warn:#b45309; --warn-bg:#fef3c7;
+  --err:#b91c1c; --ok:#15803d; --code:#0f172a; --codebg:#0f172a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--text);
+}
+.hidden{display:none !important}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+b{font-weight:600}
+
+/* 登录 */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.06)}
+.login-card h1{font-size:18px;margin:0 0 4px}
+.login-card p{margin:0 0 14px}
+.login-card input{width:100%;margin-bottom:12px}
+.err{color:var(--err);min-height:18px;margin:8px 0 0}
+
+/* 通用控件 */
+input[type=text],input[type=password]{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+  font-size:14px;background:#fff;color:var(--text);outline:none;
+}
+input[type=text]:focus,input[type=password]:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:9px 14px;border-radius:8px;cursor:pointer;font-size:14px}
+.btn:hover{background:#f0f2f5}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-d)}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+
+/* 顶栏 */
+.topbar{display:flex;align-items:center;gap:18px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.brand{font-weight:700}
+.tag{font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:4px}
+.tabs{display:flex;gap:4px;margin-left:auto}
+.tab{border:none;background:transparent;padding:8px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:14px}
+.tab:hover{background:#eef1f5;color:var(--text)}
+.tab.active{background:#e8effe;color:var(--primary);font-weight:600}
+.subtabs{display:flex;gap:6px;margin-bottom:10px}
+.subtab{border:1px solid var(--line);background:#fff;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px}
+.subtab.active{background:var(--primary);border-color:var(--primary);color:#fff}
+
+main{max-width:1080px;margin:0 auto;padding:20px}
+.view{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.lbl{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.opts{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:#3b424b;cursor:pointer}
+.row{display:flex;align-items:center;gap:12px}
+
+/* 日志 */
+summary{cursor:pointer;color:var(--muted);font-size:13px}
+.log{background:var(--codebg);color:#d7e0ea;border-radius:8px;padding:12px;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all;font:12px/1.6 ui-monospace,Consolas,"Courier New",monospace;margin:10px 0 0}
+.log.tall{max-height:none}
+
+/* 结果 */
+.meta{display:flex;flex-wrap:wrap;gap:6px 20px;margin-bottom:10px}
+.meta .k{color:var(--muted);margin-right:6px}
+.alert{border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin:8px 0;background:#f8fafc}
+.alert.warn{background:var(--warn-bg);border-color:#fcd34d;color:var(--warn)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.sec{margin-top:14px}
+.sec h3{font-size:14px;margin:0 0 6px;color:#334155}
+.preb{background:#fbfcfe;border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word;font:12.5px/1.7 ui-monospace,Consolas,"Courier New",monospace;max-height:460px;overflow:auto}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.shot{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.shot img{width:100%;display:block}
+.shot .cap{padding:6px 10px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.shot .cap a{color:var(--primary);text-decoration:none}
+.files{display:flex;flex-direction:column;gap:6px}
+.files a{color:var(--primary);text-decoration:none;font-size:13px}
+.files a:hover{text-decoration:underline}
+
+/* 历史 */
+.rlist{display:flex;flex-direction:column;gap:8px}
+.ritem{border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff}
+.ritem:hover{border-color:var(--primary);background:#f7faff}
+.ritem .u{font-size:13px;word-break:break-all}
+.ritem .s{font-size:12px;color:var(--muted);margin-top:2px}
+.badge{display:inline-block;font-size:11px;border-radius:5px;padding:1px 7px;background:#eef1f5;color:#475569;margin-left:6px}

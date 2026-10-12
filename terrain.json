@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-12",
+  "source": "举报工作提示词.md 第7节",
+  "note": "IP、主体、哈希均为当时快照，会漂移；任何一条用于举报前必须当场复测，不得直接引用。",
+  "servers": [
+    {
+      "ip": "120.24.71.201",
+      "role": "A页壳服务器",
+      "domains": ["yux.ccyuewan.com", "au.yanxuanqiming.com", "ku.yanxuanqiming.com", "kbn.yancwh.com", "cx.yancwh.com", "kxz.yancwh.com", "xm.fangzwh.com", "au.haikxz.cn", "au.bjwhua.cn"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "120.77.35.173",
+      "role": "门面站群",
+      "domains": ["ccyuewan.com", "yicebazi.com", "keetalks.com", "yanxuanqiming.com", "yiqicesuan.com", "haikxz.cn", "bjwhua.cn", "fangzwh.com"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "121.40.169.198",
+      "role": "跳转型（带动态token）",
+      "domains": ["guyiyice.com", "idtyfoz.cn", "jkhgh.cn", "ifqzf.cn"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "101.200.122.169",
+      "role": "CNAME分发层",
+      "domains": [],
+      "cnameDispatchDomains": ["cname.tair66.cn", "cname.akge.cn"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "39.106.211.213",
+      "role": "CNAME分发层",
+      "domains": [],
+      "cnameDispatchDomains": ["cname.abchk.cn"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "120.24.54.91",
+      "role": "B页宿主",
+      "domains": ["m.yicebazi.com"],
+      "capturedAt": "2026-10-12"
+    },
+    {
+      "ip": "8.166.129.201",
+      "role": "独立服务器",
+      "domains": ["tx1.xuancexinli.cn", "tx2.xuancexinli.cn"],
+      "capturedAt": "2026-10-12"
+    }
+  ],
+  "entities": [
+    { "name": "武汉泰睿文化传媒", "region": "湖北", "domains": ["tair66.cn"], "capturedAt": "2026-10-12" },
+    { "name": "武汉玄德易文化传媒", "region": "湖北", "domains": ["xdy66wh.cn"], "capturedAt": "2026-10-12" },
+    { "name": "武汉玄测心理咨询", "region": "湖北", "domains": ["xuancexinli.cn"], "capturedAt": "2026-10-12" },
+    { "name": "武汉晋辉", "region": "湖北", "domains": ["jinhui2025.cn"], "capturedAt": "2026-10-12" },
+    { "name": "武汉航晟云商贸", "region": "湖北", "domains": ["ifqzf.cn"], "capturedAt": "2026-10-12" },
+    { "name": "厦门巨锤网络科技", "region": "福建", "domains": ["xmham.cn"], "capturedAt": "2026-10-12" },
+    { "name": "深圳企客飞信息科技", "region": "广东", "domains": ["qikefei.cn", "qikefei.com"], "capturedAt": "2026-10-12" },
+    { "name": "成都鼎富通网络科技", "region": "四川", "domains": ["akge.cn"], "capturedAt": "2026-10-12" },
+    { "name": "成都嘉信恒曜科技", "region": "四川", "domains": ["abchk.cn"], "capturedAt": "2026-10-12" },
+    { "name": "丰县启盛云销售店", "region": "江苏", "domains": ["jkhgh.cn"], "capturedAt": "2026-10-12" },
+    { "name": "固安鸿宇飞网络科技", "region": "河北", "domains": ["guyiyice.com"], "capturedAt": "2026-10-12" },
+    { "name": "徐州浩文网络技术工作室", "region": "江苏", "domains": ["idtyfoz.cn"], "capturedAt": "2026-10-12" },
+    { "name": "广州音动网络科技", "region": "广东", "domains": ["ccyuewan.com"], "capturedAt": "2026-10-12" },
+    { "name": "广州言禅文化传播", "region": "广东", "domains": ["yancwh.com", "keetalks.com"], "capturedAt": "2026-10-12" },
+    { "name": "广州方舟互动科技", "region": "广东", "domains": ["yicebazi.com", "yiqicesuan.com"], "capturedAt": "2026-10-12" },
+    { "name": "孟州桐妍网络科技", "region": "河南", "domains": ["tongyanm.cn"], "capturedAt": "2026-10-12" },
+    { "name": "海口心知视界文化传播", "region": "海南", "domains": ["haikxz.cn"], "capturedAt": "2026-10-12" },
+    { "name": "海南边见文化传播", "region": "海南", "domains": ["bjwhua.cn"], "capturedAt": "2026-10-12" },
+    { "name": "洛阳上愿信息咨询", "region": "河南", "domains": ["yiqr.top"], "capturedAt": "2026-10-12" }
+  ],
+  "fingerprints": [
+    { "pageName": "名字打分", "md5": "2d1fc51fe521a6cbe276544bc36c4e58", "price": "39元", "capturedAt": "2026-10-12" },
+    { "pageName": "运程解析（sxystfa）", "md5": "4d1fd02f83a3adc3d62ba234d5513efa", "price": "39元", "capturedAt": "2026-10-12" },
+    { "pageName": "运程解析（sxysmp）", "md5": "2aed86b813e784d515569f762add0b4e", "price": "49元", "capturedAt": "2026-10-12" },
+    { "pageName": "姓名分析（name_scope壳）", "md5": "41f19e548a634e0b2a422adf657719ba", "price": null, "capturedAt": "2026-10-12" }
+  ],
+  "strengthOrder": [
+    { "kind": "icp", "rank": 1, "evidence": "同一ICP备案号（行政登记，无从辩解）" },
+    { "kind": "md5", "rank": 2, "evidence": "页面文件哈希完全相同（同一份前端产物）" },
+    { "kind": "email", "rank": 3, "evidence": "同whois注册邮箱（关联主体）" },
+    { "kind": "cname", "rank": 4, "evidence": "同CNAME分发域" },
+    { "kind": "ip", "rank": 5, "evidence": "同服务器IP" },
+    { "kind": "copytext", "rank": 6, "evidence": "相同页面文案（最弱，能被说成抄的）" }
+  ]
+}

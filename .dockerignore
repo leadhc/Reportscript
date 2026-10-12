@@ -1,0 +1,7 @@
+node_modules
+reports
+.git
+.gitignore
+*.log
+fixtures
+.opencode

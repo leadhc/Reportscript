@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>微信违规链接举报工具</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="login" class="login-wrap hidden">
+  <form id="login-form" class="login-card">
+    <h1>微信违规链接举报工具</h1>
+    <p class="muted">请输入访问口令</p>
+    <input id="password" type="password" placeholder="访问口令" autocomplete="current-password" autofocus>
+    <button type="submit" class="btn primary">登录</button>
+    <p id="login-error" class="err"></p>
+  </form>
+</div>
+
+<!-- 主体 -->
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand">举报工具 <span class="tag">report-tool</span></div>
+    <nav class="tabs">
+      <button class="tab active" data-view="run">取证</button>
+      <button class="tab" data-view="history">历史报告</button>
+      <button class="tab" data-view="templates">模板</button>
+    </nav>
+    <button id="logout" class="btn ghost">退出</button>
+  </header>
+
+  <main>
+    <!-- 取证 -->
+    <section id="view-run" class="view">
+      <form id="run-form" class="card">
+        <label class="lbl">目标 URL（含投放参数请完整粘贴）</label>
+        <input id="url" type="text" placeholder="http://example.com/path/?channel=...&amp;account_id=..." spellcheck="false">
+        <div class="opts">
+          <label class="chk"><input id="opt-render" type="checkbox" checked> 渲染截图（Playwright）</label>
+          <label class="chk"><input id="opt-terrain" type="checkbox" checked> 地形/指纹比对</label>
+          <label class="chk"><input id="opt-beian" type="checkbox"> 远程备案渠道</label>
+        </div>
+        <div class="row">
+          <button type="submit" class="btn primary">开始取证</button>
+          <span id="run-status" class="muted"></span>
+        </div>
+        <p class="muted small">只生成材料，<b>不发送邮件</b>；发送请人工按信中步骤执行（防重复投递）。</p>
+      </form>
+
+      <details id="log-wrap" class="card" open>
+        <summary>实时进度</summary>
+        <pre id="run-log" class="log"></pre>
+      </details>
+
+      <div id="result"></div>
+    </section>
+
+    <!-- 历史 -->
+    <section id="view-history" class="view hidden">
+      <div id="history" class="card"><p class="muted">加载中…</p></div>
+      <div id="history-detail"></div>
+    </section>
+
+    <!-- 模板 -->
+    <section id="view-templates" class="view hidden">
+      <div class="card">
+        <p class="muted small">模板骨架为固定文案，举报信必须逐字沿用，不得改写。</p>
+        <div id="template-tabs" class="subtabs"></div>
+        <pre id="template-body" class="log tall"></pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

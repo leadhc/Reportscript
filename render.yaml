@@ -1,0 +1,19 @@
+# Render 蓝图：把本目录作为一个免费 Docker Web 服务部署
+# 用法：把 report-tool 推到 GitHub 后，在 Render 里选 “New → Blueprint” 指向该仓库。
+services:
+  - type: web
+    name: wechat-report-tool
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # 访问口令。在 Render 控制台里填真实值（不要写进仓库）。
+      - key: APP_PASSWORD
+        sync: false
+      - key: PORT
+        value: "10000"
+      # 容器内用 Playwright 自带 Chromium（留空即可，勿设成 msedge）
+      - key: BROWSER_CHANNEL
+        value: ""

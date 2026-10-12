@@ -1,0 +1,19 @@
+{
+  "name": "report-tool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "微信违规链接举报自动化：侦察 → 取证 → 备案 → 生成举报信",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "web": "node server.js",
+    "cli": "node cli.js",
+    "test": "node fixtures/run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.64.0"
+  }
+}
