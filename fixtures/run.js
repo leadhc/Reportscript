@@ -134,6 +134,38 @@ test('付费原话提取：命中付费/仅供参考/元等特征行', () => {
   assert.ok(q.some(s => s.includes('仅供参考')));
 });
 
+// 3b. 渲染导航降级（render 纯函数：注入伪 page，不启浏览器）
+test('渲染导航降级：DOMContentLoaded 优先，超时退 commit，全败带 error', async () => {
+  const { navigate } = require('../lib/render');
+
+  // 场景1：DOMContentLoaded 就绪 → 直接返回，不再重试
+  const calls1 = [];
+  const okPage = { goto: async (url, o) => { calls1.push(o.waitUntil); } };
+  let r = await navigate(okPage, 'https://x.test/');
+  assert.strictEqual(r.error, null);
+  assert.strictEqual(r.waitUntil, 'domcontentloaded');
+  assert.deepStrictEqual(calls1, ['domcontentloaded'], '就绪时不应重试');
+
+  // 场景2：domcontentloaded 超时（load 永不触发的典型形态）→ 退到 commit
+  const calls2 = [];
+  const flaky = {
+    goto: async (url, o) => {
+      calls2.push(o.waitUntil);
+      if (o.waitUntil === 'domcontentloaded') throw new Error('page.goto: Timeout 35000ms exceeded');
+    },
+  };
+  r = await navigate(flaky, 'https://ysddxmdfcjsd01.ghshpbl.com/');
+  assert.strictEqual(r.error, null, '退到 commit 成功后不应报错');
+  assert.strictEqual(r.waitUntil, 'commit');
+  assert.deepStrictEqual(calls2, ['domcontentloaded', 'commit'], '应按 domcontentloaded → commit 依次尝试');
+
+  // 场景3：两者都失败 → 带回 error（由上层决定是否「页面已打开则尽力抓」）
+  const dead = { goto: async () => { throw new Error('boom'); } };
+  r = await navigate(dead, 'https://x.test/');
+  assert.ok(r.error, '全败必须带回 error');
+  assert.strictEqual(r.waitUntil, null);
+});
+
 // 4. 本地页面自述扫描（备案 provider #0）
 test('备案本地扫描：提取 ICP 号与主体名', () => {
   const dir = tmpOutDir();
