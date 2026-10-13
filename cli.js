@@ -56,6 +56,44 @@ function uniqueOutDir(base) {
   return `${base}-${n}`;
 }
 
+// ── reports/ 容量治理：最多保留最近 N 份抓取记录 ──────────────────
+//
+// 每次取证都新建一个时间戳目录，跑得多了会无限堆积。这里按「修改时间从新到旧」
+// 只保留最近 MAX_REPORTS 份，其余整目录删除。可用环境变量 REPORT_KEEP 覆盖份数。
+// 只认本工具产出的目录名（<域名|probe>-YYYY-MM-DD-HH-mm-ss[-N]），其它目录/文件一律不碰。
+const MAX_REPORTS = Math.max(1, parseInt(process.env.REPORT_KEEP || '10', 10) || 10);
+const REPORT_DIR_RE = /-(?:\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})(?:-\d+)?$/;
+
+/**
+ * 只保留最近 keep 份抓取记录，删除更旧的整目录。
+ * @param {number} keep 保留份数（默认 MAX_REPORTS）
+ * @param {string} dir  记录根目录（默认 REPORTS_DIR，测试可注入临时目录）
+ * @returns {string[]} 被删除的目录名（按时间从旧到新）
+ */
+function pruneReports(keep = MAX_REPORTS, dir = REPORTS_DIR) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  const dirs = [];
+  for (const e of entries) {
+    if (!e.isDirectory() || !REPORT_DIR_RE.test(e.name)) continue; // 不碰非记录目录
+    const abs = path.join(dir, e.name);
+    let mtimeMs = 0;
+    try { mtimeMs = fs.statSync(abs).mtimeMs; } catch { continue; }
+    dirs.push({ name: e.name, abs, mtimeMs });
+  }
+  if (dirs.length <= keep) return [];
+  dirs.sort((a, b) => b.mtimeMs - a.mtimeMs); // 新 → 旧
+  const removed = [];
+  for (const v of dirs.slice(keep).reverse()) { // 从最旧的开始删
+    try {
+      fs.rmSync(v.abs, { recursive: true, force: true });
+      removed.push(v.name);
+    } catch { /* 单个删不掉不阻断其余 */ }
+  }
+  if (removed.length) log('清理', `保留最近 ${keep} 份，已删除 ${removed.length} 份旧记录：${removed.join('、')}`);
+  return removed;
+}
+
 // ── 主域名收敛（每个被举报链接都要抓到一级域名） ────────────────
 //
 // 一条链接可能牵出不止一个主域名：输入域、每一跳重定向、iframe 目标、
@@ -188,6 +226,7 @@ async function cmdProbe(inputUrl) {
   const outDir = uniqueOutDir(path.join(REPORTS_DIR, `probe-${ts}`));
   fs.mkdirSync(outDir, { recursive: true });
   log('侦察', `报告目录：${outDir}`);
+  pruneReports(); // 容量治理：只保留最近 MAX_REPORTS 份记录
   const [p] = await stage('侦察', () => probeTarget(inputUrl, outDir));
   if (!p) return 1;
   console.log(JSON.stringify({
@@ -219,6 +258,7 @@ async function runFullInner(inputUrl, opts) {
   const outDir = uniqueOutDir(path.join(REPORTS_DIR, `${domainPart}-${ts}`));
   fs.mkdirSync(outDir, { recursive: true });
   log('流程', `报告目录：${outDir}`);
+  pruneReports(); // 容量治理：只保留最近 MAX_REPORTS 份抓取记录
   log('流程', `目标 URL：${inputUrl}`);
 
   // 数据结构约定（letter.js 依赖）：report.input / report.target 独立于 stage 产出
@@ -516,6 +556,7 @@ function usage() {
     '',
     '说明:',
     '  报告写入 reports/<域名>-<时间戳>/，每跑一次新建目录，不覆盖历史底档。',
+    '  reports/ 最多保留最近 10 份记录（环境变量 REPORT_KEEP 可改），更旧的自动整目录清理。',
     '  信件生成失败不阻塞 report.json 落盘，可事后用 letter 子命令重生成。',
     '  本工具不发送邮件（规格书 5.2 防重复投递铁律）。',
   ].join('\n'));
@@ -555,5 +596,5 @@ if (require.main === module) main();
 
 module.exports = {
   parseArgs, runFull, cmdLetter, cmdProbe, printSummary, setLogSink, main,
-  collectLinkUrls, hostsAndDomains, mergeBeian, pageOwners,
+  collectLinkUrls, hostsAndDomains, mergeBeian, pageOwners, pruneReports, MAX_REPORTS,
 };

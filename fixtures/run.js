@@ -487,6 +487,37 @@ test('cli 可被 require：入口有 require.main 守卫，不自动执行', () 
   assert.strictEqual(typeof cli.printSummary, 'function');
 });
 
+test('reports 清理：只保留最近 10 份，非记录目录/文件不动', () => {
+  const { pruneReports } = require('../cli');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-'));
+  try {
+    const names = [];
+    const base = Date.now() - 60 * 60 * 1000;
+    for (let i = 0; i < 13; i++) {
+      const n = `x.com-2026-10-13-10-00-${String(i).padStart(2, '0')}`;
+      const abs = path.join(tmp, n);
+      fs.mkdirSync(abs);
+      const t = new Date(base + i * 60000); // 越大越新
+      fs.utimesSync(abs, t, t);
+      names.push(n);
+    }
+    fs.mkdirSync(path.join(tmp, 'tmp-step2'));           // 非本工具记录目录 → 不碰
+    fs.writeFileSync(path.join(tmp, 'notes.txt'), 'x');  // 非目录 → 不碰
+
+    const removed = pruneReports(10, tmp);
+
+    assert.deepStrictEqual(removed, names.slice(0, 3), `应按修改时间删最旧的 3 份：${removed}`);
+    const left = fs.readdirSync(tmp).filter(n => /^x\.com-/.test(n));
+    assert.strictEqual(left.length, 10, `应剩 10 份：${left}`);
+    assert.ok(!fs.existsSync(path.join(tmp, names[0])), '最旧一份应被删除');
+    assert.ok(fs.existsSync(path.join(tmp, names[12])), '最新一份必须保留');
+    assert.ok(fs.existsSync(path.join(tmp, 'tmp-step2')), '非记录目录不得删除');
+    assert.ok(fs.existsSync(path.join(tmp, 'notes.txt')), '非目录不得删除');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // ── 入口 ───────────────────────────────────────────────────────
 
 (async () => {
