@@ -19,7 +19,7 @@ const os = require('os');
 const path = require('path');
 
 const { startServer, PAGES } = require('./server');
-const { probeTarget, registrableDomain, extractTitle } = require('../lib/probe');
+const { probeTarget, registrableDomain, mainDomainOf, extractTitle } = require('../lib/probe');
 const { normalizeLocation } = require('../lib/net');
 const { WXUA, PLAIN_UA } = require('../lib/constants');
 const { loadTerrain, matchTerrain } = require('../lib/terrain');
@@ -78,6 +78,23 @@ test('registrableDomain：常见后缀与多级后缀', () => {
   assert.strictEqual(registrableDomain('localhost'), 'localhost');
 });
 
+test('registrableDomain：大小写 / 尾点 / 深子域 / 新增二级后缀 / IP 兜底', () => {
+  assert.strictEqual(registrableDomain('NFD109.YSKYL.BABY'), 'yskyl.baby');
+  assert.strictEqual(registrableDomain('cs.6dfat1z.cn.'), '6dfat1z.cn');
+  assert.strictEqual(registrableDomain('a.b.c.example.co.uk'), 'example.co.uk');
+  assert.strictEqual(registrableDomain('x.example.com.br'), 'example.com.br');
+  // IP 字面量没有注册域概念，必须原样返回（不得切成 11.179）
+  assert.strictEqual(registrableDomain('47.57.11.179'), '47.57.11.179');
+  assert.strictEqual(registrableDomain(''), '');
+});
+
+test('mainDomainOf：URL 与裸 host 均能取到主域名', () => {
+  assert.strictEqual(mainDomainOf('https://ysddxmdfcjsd80.jsntcygg.com/p/?a=1'), 'jsntcygg.com');
+  assert.strictEqual(mainDomainOf('nfd109.yskyl.baby'), 'yskyl.baby');
+  assert.strictEqual(mainDomainOf('//h2.example.com/x', 'https://a.example.com/'), 'example.com');
+  assert.strictEqual(mainDomainOf(''), null);
+});
+
 test('normalizeLocation：绝对 / 相对 / 协议相对', () => {
   assert.strictEqual(normalizeLocation('/b', 'http://h/a'), 'http://h/b');
   assert.strictEqual(normalizeLocation('//h2/x', 'http://h/'), 'http://h2/x');
@@ -126,6 +143,32 @@ test('备案本地扫描：提取 ICP 号与主体名', () => {
   assert.ok(scan.icpNumbers.includes('闽ICP备2024043513号-8'), JSON.stringify(scan));
   assert.ok(scan.companies.some(c => c.includes('有限公司')), JSON.stringify(scan));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('备案本地扫描：多域场景按页面归属绑定，不把 B 页自述备案号算到 A 域名头上', () => {
+  const dir = tmpOutDir();
+  fs.writeFileSync(path.join(dir, 'b_raw.html'),
+    '<footer>版权所有 某某网络科技有限公司 闽ICP备2024043513号-8</footer>');
+  const owners = { 'b_raw.html': 'b.example.com', 'b_www.html': 'a.example.com' };
+  // 落地页属 B：查 B 命中
+  const hitB = localScan(dir, 'b.example.com', owners);
+  assert.ok(hitB.icpNumbers.includes('闽ICP备2024043513号-8'), JSON.stringify(hitB));
+  // 落地页不属于 A，且 A 无自有页面：查 A 不得命中（防张冠李戴）
+  const missA = localScan(dir, 'a.example.com', owners);
+  assert.deepStrictEqual(missA.icpNumbers, [], JSON.stringify(missA));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('pageOwners：b_raw=落地域 / b_www=输入域 / b_rendered=渲染落地域', () => {
+  const { pageOwners } = require('../cli');
+  const owners = pageOwners(
+    { finalRegistrableDomain: 'example-b.com' },
+    { finalUrl: 'https://x.example-c.com/y' },
+    'example-a.com',
+  );
+  assert.strictEqual(owners['b_raw.html'], 'example-b.com');
+  assert.strictEqual(owners['b_www.html'], 'example-a.com');
+  assert.strictEqual(owners['b_rendered.html'], 'example-c.com');
 });
 
 // 5. terrain 关联：按 7.4 强度排序
@@ -241,6 +284,41 @@ test('fixture /blocked 403 → blocked / 换裸 UA 重试如实记录', async ()
   }
 });
 
+test('首跳证据落盘：直出型 h_a.txt=200 头 / b_a.html 与 b_raw.html 同源', async () => {
+  const srv = await startServer();
+  const out = tmpOutDir();
+  try {
+    await probeTarget(`${srv.baseUrl}/b`, out);
+    const hA = fs.readFileSync(path.join(out, 'h_a.txt'), 'utf8');
+    assert.ok(hA.startsWith('HTTP/1.1 200 OK\n'), `h_a.txt 首行应为 curl -D 风格：${JSON.stringify(hA.slice(0, 40))}`);
+    assert.ok(/^content-type: text\/html/im.test(hA), `h_a.txt 应含 content-type：${hA}`);
+    const bA = fs.readFileSync(path.join(out, 'b_a.html'));
+    const bRaw = fs.readFileSync(path.join(out, 'b_raw.html'));
+    assert.strictEqual(md5str(bA), md5str(PAGES.b), 'b_a.html 应为首跳响应体原样');
+    assert.strictEqual(md5str(bA), md5str(bRaw), 'direct 时 b_a.html 应与 b_raw.html 逐字节一致');
+  } finally {
+    await srv.close();
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('首跳证据落盘：跳转型 h_a.txt 记录 302 与 Location / b_a.html 存在', async () => {
+  const srv = await startServer();
+  const out = tmpOutDir();
+  try {
+    await probeTarget(`${srv.baseUrl}/a`, out);
+    const hA = fs.readFileSync(path.join(out, 'h_a.txt'), 'utf8');
+    assert.ok(hA.startsWith('HTTP/1.1 302 Found\n'), `h_a.txt 首行应为 302：${JSON.stringify(hA.slice(0, 40))}`);
+    assert.ok(/^location: \/b$/im.test(hA), `h_a.txt 应含 Location: /b：${hA}`);
+    assert.ok(fs.existsSync(path.join(out, 'b_a.html')), 'b_a.html 必须存在（跳转壳响应体）');
+    // 首跳壳与终点页是两个不同文件（A→B 证据）
+    assert.ok(fs.existsSync(path.join(out, 'b_raw.html')), 'b_raw.html 终点页必须存在');
+  } finally {
+    await srv.close();
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
 // 8. 信件组装端到端（合成 report，覆盖 B 模板 + 脱敏 + 主题行）
 function synthReport() {
   const inputUrl = 'https://ysddxmdfcjsd80.example-a.com/?token=tk_abc&sign=deadbeef';
@@ -348,6 +426,58 @@ test('collectTokenNames：从 probe 链提取参数名黑名单', () => {
   const names = collectTokenNames(synthReport().probe);
   assert.ok(names.includes('token'), JSON.stringify(names));
   assert.ok(names.includes('sign'), JSON.stringify(names));
+});
+
+test('主域名收敛：输入 + 每跳 + catch-all + www + 渲染落地全部抓到', () => {
+  const { collectLinkUrls, hostsAndDomains } = require('../cli');
+  const input = new URL('https://a.entry.com/?t=1');
+  const probe = {
+    chain: [
+      { url: 'https://a.entry.com/?t=1', status: 302, location: 'https://b.mid.net/step' },
+      { url: 'https://b.mid.net/step', status: 302, location: 'https://c.final.org/b' },
+      { url: 'https://c.final.org/b', status: 200, location: null },
+    ],
+    catchAll: { host: 'c.final.org', count: 23 },
+    wwwVariant: { url: 'https://www.entry.com/' },
+  };
+  const render = { finalUrl: 'https://d.js-land.co/real?x=1' };
+  const { hosts, domains } = hostsAndDomains(collectLinkUrls(input, probe, render));
+  for (const d of ['entry.com', 'mid.net', 'final.org', 'js-land.co']) {
+    assert.ok(domains.includes(d), `应抓到主域名 ${d}：${JSON.stringify(domains)}`);
+  }
+  assert.strictEqual(domains[0], 'entry.com', '输入域必须在首位');
+  for (const h of ['a.entry.com', 'b.mid.net', 'c.final.org', 'www.entry.com', 'd.js-land.co']) {
+    assert.ok(hosts.includes(h), `应抓到主机 ${h}：${JSON.stringify(hosts)}`);
+  }
+});
+
+test('信件组装：涉及多个一级域名时，主题与「一级域名/二级域名」块全部列出', () => {
+  const out = tmpOutDir();
+  try {
+    const report = synthReport();
+    report.mainDomains = ['example-a.com', 'example-b.com', 'example-c.com'];
+    report.linkUrls = [
+      report.input.url,
+      'https://nfd109.example-b.com/?token=tk_abc&sign=deadbeef',
+      'https://x.example-c.com/b?token=tk_abc',
+    ];
+    report.whois['example-c.com'] = { status: 'ok', registrar: 'X', registrarName: null, registeredAt: '2026-01-01', nameservers: [] };
+
+    const r = generateLetter(report, out);
+    assert.strictEqual(r.subjectLine, '违规链接举报反馈【example-a.com / example-b.com / example-c.com】');
+
+    const md = fs.readFileSync(path.join(out, r.file), 'utf8');
+    const body = md.split('## 正文（复制以下内容到邮件正文）')[1].split('## 取证底档')[0];
+    for (const d of ['example-a.com', 'example-b.com', 'example-c.com']) contains(body, `域名：${d}`);
+    contains(body, '域名：x.example-c.com');
+    // 首个一级域名由骨架「域名：{一级域名}」行给出，主体信息块不得重复该行
+    const firstDomainLines = body.split('\n').filter(l => l.trim() === '域名：example-a.com');
+    assert.strictEqual(firstDomainLines.length, 1, `首个一级域名行应只出现一次：${JSON.stringify(firstDomainLines)}`);
+    assert.ok(!body.includes('x.example-c.com/b?'), '新域主机 URL 必须脱 query');
+    assert.doesNotThrow(() => assertNoTokenLeak(body, report.input.url, collectTokenNames(report.probe)));
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
 });
 
 test('cli 可被 require：入口有 require.main 守卫，不自动执行', () => {

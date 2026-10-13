@@ -192,6 +192,7 @@ function summarizeDir(dir) {
     inputUrl: (report && report.inputUrl) || null,
     generatedAt: (report && report.generatedAt) || null,
     resolvedDomain: (report && report.resolvedDomain) || null,
+    mainDomains: (report && report.mainDomains) || null,
     type: probe.type || null,
     template: probe.template || (report && report.template) || null,
     subjectLine,

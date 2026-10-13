@@ -221,6 +221,8 @@ function renderResult(s) {
   let html = '<div class="card">';
   html += '<div class="meta">'
     + `<div><span class="k">类型 / 模板</span> ${esc(s.type || '—')} / ${esc(s.template || '需人工裁决')}</div>`
+    + (s.mainDomains && s.mainDomains.length
+      ? `<div><span class="k">一级域名</span> ${esc(s.mainDomains.join('、'))}</div>` : '')
     + `<div><span class="k">主题</span> ${esc(s.subjectLine || '—')}</div>`
     + `<div><span class="k">目录</span> ${esc(dir || '—')}</div>`
     + '</div>';

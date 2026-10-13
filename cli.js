@@ -14,7 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { probeTarget, registrableDomain } = require('./lib/probe');
+const { probeTarget, registrableDomain, mainDomainOf } = require('./lib/probe');
 const { resolveDns, setAbortSignal, isAborted } = require('./lib/net');
 const { whoisLookup } = require('./lib/whois');
 const { beianLookup } = require('./lib/beian');
@@ -54,6 +54,77 @@ function uniqueOutDir(base) {
   let n = 1;
   while (fs.existsSync(`${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+// ── 主域名收敛（每个被举报链接都要抓到一级域名） ────────────────
+//
+// 一条链接可能牵出不止一个主域名：输入域、每一跳重定向、iframe 目标、
+// catch-all 跳转壳、www 变体、以及渲染后 JS 真正落地页。全部收敛成
+// 「谁的 whois/备案要查、信里一级域名块要列什么」，一处维护。
+
+/**
+ * 汇总本次链接涉及的全部 URL（输入 / 每跳 / iframe / catch-all / www / 渲染落地）。
+ * 顺序 = 发现顺序，输入 URL 恒在首位；去重。
+ * @param {{href:string}} input 已解析的输入 URL
+ * @param {object|null} probe 侦察结果
+ * @param {object|null} render 渲染结果（渲染后调用才拿得到落地页）
+ * @returns {string[]} 绝对 URL 列表（含 query，仅作底档/汇总用）
+ */
+function collectLinkUrls(input, probe, render) {
+  const urls = [];
+  const push = (raw, base) => {
+    if (!raw) return;
+    let abs;
+    try { abs = new URL(raw, base || input.href).href; } catch { return; }
+    if (!urls.includes(abs)) urls.push(abs);
+  };
+  push(input.href);
+  for (const c of (probe && probe.chain) || []) {
+    push(c.url, input.href);
+    push(c.location, c.url || input.href);
+  }
+  if (probe && probe.catchAll && probe.catchAll.host) push(`http://${probe.catchAll.host}/`);
+  if (probe && probe.wwwVariant && probe.wwwVariant.url) push(probe.wwwVariant.url);
+  if (render && render.finalUrl) push(render.finalUrl);
+  return urls;
+}
+
+/** 从 URL 列表提取 {hosts, domains}（去重保序，domains = 一级域名）。 */
+function hostsAndDomains(urls) {
+  const hosts = [];
+  const domains = [];
+  for (const u of urls) {
+    let host = null;
+    try { host = new URL(u).hostname; } catch { continue; }
+    if (!host) continue;
+    if (!hosts.includes(host)) hosts.push(host);
+    const d = registrableDomain(host);
+    if (d && !domains.includes(d)) domains.push(d);
+  }
+  return { hosts, domains };
+}
+
+/** 把补充查询的备案结果并入已有 report.beian（重算整体状态与耗时）。 */
+function mergeBeian(target, extra) {
+  if (!extra || !extra.perDomain) return target;
+  for (const [d, e] of Object.entries(extra.perDomain)) target.perDomain[d] = e;
+  const st = Object.values(target.perDomain).map(e => e.status);
+  target.status = st.every(s => s === 'hit') ? 'hit'
+    : st.some(s => s === 'hit') ? 'partial' : 'degraded';
+  target.totalMs = (target.totalMs || 0) + (extra.totalMs || 0);
+  return target;
+}
+
+/** 页面文件 → 一级域名 归属映射（本地自述备案扫描用，防跨域张冠李戴）。
+ *  b_raw.html=落地页，b_www.html=输入域的 www，b_rendered.html=渲染落地页。 */
+function pageOwners(probe, render, inputDomain) {
+  const owners = {
+    'b_raw.html': (probe && probe.finalRegistrableDomain) || inputDomain,
+    'b_www.html': inputDomain,
+  };
+  const rf = render && render.finalUrl ? mainDomainOf(render.finalUrl) : null;
+  if (rf) owners['b_rendered.html'] = rf;
+  return owners;
 }
 
 // ── Stage 隔离 ─────────────────────────────────────────────────
@@ -158,6 +229,9 @@ async function runFullInner(inputUrl, opts) {
     resolvedDomain: domainPart,
     input: { url: inputUrl },
     target: { host: input.hostname, registrableDomain: domainPart },
+    // 本次链接涉及的全部 URL 与一级域名（输入 + 每跳 + iframe + catch-all + www + 渲染落地）
+    linkUrls: [inputUrl],
+    mainDomains: [domainPart],
     // 以下由后续阶段填入；初始化为空对象，任一阶段失败时 letter.js 仍能照常组装
     probe: null, dns: {}, whois: {}, beian: { status: 'degraded', perDomain: {}, totalMs: 0 },
     terrain: { matches: [], note: '' },
@@ -179,12 +253,17 @@ async function runFullInner(inputUrl, opts) {
     if (probe.blocked) warn(`首站被挡（wx ${probe.blocked.wxTried.status} / plain ${probe.blocked.plainTried.status}），已换裸 UA 重试`);
   }
 
+  // ── 涉及的链接与一级域名 ──────────────────────────────────────
+  // 输入 + 每跳重定向 + iframe 目标 + catch-all 壳 + www 变体全部收敛；
+  // 渲染落地页在渲染后补抓（见下）。任何一条链接都要拿到它的主域名。
+  let linkUrls = collectLinkUrls(input, probe, null);
+  let { hosts: linkHosts, domains: mainDomains } = hostsAndDomains(linkUrls);
+  report.linkUrls = linkUrls;
+  report.mainDomains = mainDomains;
+  if (mainDomains.length > 1) log('主域名', `本次涉及 ${mainDomains.length} 个一级域名：${mainDomains.join('、')}`);
+
   // ── DNS ───────────────────────────────────────────────────────
-  const dnsHosts = new Set();
-  if (probe) {
-    dnsHosts.add(input.hostname);
-    if (probe.finalUrl) { try { dnsHosts.add(new URL(probe.finalUrl).hostname); } catch {} }
-  }
+  const dnsHosts = new Set(linkHosts);
   const dns = {};
   for (const h of dnsHosts) {
     const [d] = await stage(`DNS(${h})`, () => resolveDns(h));
@@ -198,15 +277,9 @@ async function runFullInner(inputUrl, opts) {
     if (d.ips.length) log('DNS', `IP ${d.ips.join('、')}`);
   }
 
-  // ── whois ─────────────────────────────────────────────────────
+  // ── whois（每个一级域名都查；probe 失败也照查输入域） ──────────
   const whois = {};
-  const whoisDomains = [];
-  if (probe) {
-    const regs = new Set();
-    regs.add(domainPart);
-    if (probe.finalRegistrableDomain) regs.add(probe.finalRegistrableDomain);
-    whoisDomains.push(...regs);
-  }
+  const whoisDomains = [...mainDomains];
   for (const d of whoisDomains) {
     const [w] = await stage(`whois(${d})`, () => whoisLookup(d, outDir));
     if (w) whois[d] = w;
@@ -224,7 +297,10 @@ async function runFullInner(inputUrl, opts) {
   }
 
   // ── 备案 ──────────────────────────────────────────────────────
-  const [beian] = await stage('备案', () => beianLookup(whoisDomains, outDir, { remote: opts.beianRemote }));
+  const [beian] = await stage('备案', () => beianLookup(whoisDomains, outDir, {
+    remote: opts.beianRemote,
+    pageOwners: pageOwners(probe, null, domainPart),
+  }));
   report.beian = beian || { status: 'degraded', perDomain: {}, totalMs: 0 };
   if (beian) {
     const hits = Object.values(beian.perDomain || {}).filter(e => e.status === 'hit');
@@ -288,6 +364,41 @@ async function runFullInner(inputUrl, opts) {
     log('渲染', '已跳过（--no-render）');
   }
 
+  // ── 主域名补抓 ────────────────────────────────────────────────
+  // 渲染后 JS 真正落地的域名/主机，若不在已知集合里（A 页 200 壳 + JS 跳 B 的常见形态），
+  // 补 DNS + whois + 备案 —— 保证「每个被举报链接」的主域名都抓到，不因走的是 JS 跳转而漏。
+  {
+    linkUrls = collectLinkUrls(input, probe, render);
+    const merged = hostsAndDomains(linkUrls);
+    const newDomains = merged.domains.filter(d => !whoisDomains.includes(d));
+    const newHosts = merged.hosts.filter(h => !dnsHosts.has(h));
+    report.linkUrls = linkUrls;
+
+    for (const h of newHosts) {
+      const [d] = await stage(`DNS(${h})`, () => resolveDns(h));
+      if (d) dns[h] = d; else failures.push(`DNS(${h})`);
+      dnsHosts.add(h);
+    }
+    if (newHosts.length) report.dns = dns;
+
+    if (newDomains.length) {
+      log('主域名', `补抓到新的一级域名：${newDomains.join('、')}`);
+      for (const d of newDomains) {
+        const [w] = await stage(`whois(${d})`, () => whoisLookup(d, outDir));
+        if (w) whois[d] = w; else failures.push(`whois(${d})`);
+      }
+      const [beianExtra] = await stage('备案(补)', () => beianLookup(newDomains, outDir, {
+        remote: opts.beianRemote,
+        pageOwners: pageOwners(probe, render, domainPart),
+      }));
+      if (beianExtra) mergeBeian(report.beian, beianExtra);
+      else failures.push('备案(补)');
+      whoisDomains.push(...newDomains);
+      report.whois = whois;
+      report.mainDomains = [...whoisDomains];
+    }
+  }
+
   // ── 信件 ──────────────────────────────────────────────────────
   report.template = probe && probe.template;
   const [letter, lErr] = await stage('信件', () => generateLetter(report, outDir));
@@ -321,6 +432,9 @@ function printSummary(report, ctx) {
   emit(`目标          : ${report.inputUrl}\n`);
   emit(`报告目录      : ${ctx.outDir}\n`);
   emit(`类型 / 模板   : ${p.type || '—'} / ${p.template || '需人工裁决'}\n`);
+  if (report.mainDomains && report.mainDomains.length) {
+    emit(`一级域名      : ${report.mainDomains.join('、')}\n`);
+  }
   if (p.chain.length) {
     emit(`链路          : ${p.chain.map(c => `${c.status || 'ERR'} ${c.url}`).join(' → ')}\n`);
   }
@@ -439,4 +553,7 @@ async function main() {
 // 仅在被直接执行时启动；被 require（测试）时不自动跑。
 if (require.main === module) main();
 
-module.exports = { parseArgs, runFull, cmdLetter, cmdProbe, printSummary, setLogSink, main };
+module.exports = {
+  parseArgs, runFull, cmdLetter, cmdProbe, printSummary, setLogSink, main,
+  collectLinkUrls, hostsAndDomains, mergeBeian, pageOwners,
+};
