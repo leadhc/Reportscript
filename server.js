@@ -4,9 +4,11 @@
 //   - 网页输入 URL → 服务端跑「侦察→DNS→whois→备案→地形→渲染→写信」
 //   - 进度通过 SSE 实时推给前端
 //   - 结果页可看举报信正文 / 重测 / 自检 / 底档、看截图、下载 .md 与 report.json
-//   - 内置模板 A/B/C 只读浏览
+//   - 结果页可选择「复制正文手动发送」或「自动发送邮件」（SMTP 需配置）
+//   - 内置模板 A/B/C 只读浏览，另可添加自定义模板（持久化到 data/templates.json）
 //
-// 纪律不变：发送邮件【不】自动化（规格书 5.2 防重复投递铁律）。
+// 纪律：默认只生成材料；自动发送必须由用户显式点击并二次确认，
+//       成功后写 send.json，同一报告禁止重复投递（规格书 5.2）。
 //
 // 环境变量：
 //   PORT           默认 10000（Render 会自动注入）
@@ -21,11 +23,19 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { runFull, setLogSink } = require('./cli');
+const {
+  sendReportEmail, sendState, publicMailConfig, attachmentsFor,
+} = require('./lib/mailer');
 
 const TOOL_ROOT = __dirname;
 const REPORTS_DIR = path.join(TOOL_ROOT, 'reports');
 const WEB_DIR = path.join(TOOL_ROOT, 'web');
 const TEMPLATES_DIR = path.join(TOOL_ROOT, 'lib', 'templates');
+
+// 用户数据目录（自定义模板等）：与 reports/ 同理，不进仓库 / 不进镜像，运行时落盘。
+const DATA_DIR = path.join(TOOL_ROOT, 'data');
+const CUSTOM_TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+const MAX_TEMPLATE_CONTENT = 12000; // 单个自定义模板内容上限（字）
 
 const PORT = +(process.env.PORT || 10000);
 const SESSION_TTL_MS = 12 * 3600 * 1000;
@@ -187,6 +197,23 @@ function summarizeDir(dir) {
   const subjectLine = report && report.letter && report.letter.subjectLine
     || (report && `违规链接举报反馈【${report.resolvedDomain}】`) || null;
 
+  // 邮件发送能力与状态：未配置 SMTP 时前端只展示「手动复制发送」
+  const mailCfg = publicMailConfig();
+  const send = sendState(dir);
+  const mail = {
+    configured: mailCfg.configured,
+    to: mailCfg.to,
+    from: mailCfg.from,
+    host: mailCfg.host,
+    maxAttachMB: mailCfg.maxAttachMB,
+    attachmentCount: attachmentsFor(report, dir).length,
+    state: send.state,
+    sentAt: send.sentAt || null,
+    messageId: send.messageId || null,
+    startedAt: send.startedAt || null,
+    sendError: send.error || null,
+  };
+
   return {
     outDirName: path.basename(dir),
     inputUrl: (report && report.inputUrl) || null,
@@ -203,6 +230,7 @@ function summarizeDir(dir) {
     paidQuotes: render.paidQuotes || [],
     screenshotError: render.error || null,
     artifacts: readDirArtifacts(dir),
+    mail,
     report,
   };
 }
@@ -217,6 +245,33 @@ function listReports() {
     .map(p => summarizeDir(p))
     .filter(s => s.report || s.letterMarkdown)
     .sort((a, b) => String(b.generatedAt || b.outDirName).localeCompare(String(a.generatedAt || a.outDirName)));
+}
+
+// ── 模板读取 / 自定义模板持久化 ─────────────────────────────────
+// 内置 A/B/C 只读（举报信骨架，逐字沿用）；自定义模板存 data/templates.json，
+// 进程重启 / 页面重开仍在。
+function builtinTemplates() {
+  const out = {};
+  for (const f of ['A.md', 'B.md', 'C.md']) {
+    const p = safeJoin(TEMPLATES_DIR, f);
+    if (p && fs.existsSync(p)) out[f.replace('.md', '')] = fs.readFileSync(p, 'utf8');
+  }
+  return out;
+}
+
+function readCustomTemplates() {
+  try {
+    const arr = JSON.parse(fs.readFileSync(CUSTOM_TEMPLATES_FILE, 'utf8'));
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(t => t && typeof t.id === 'string' && typeof t.name === 'string' && typeof t.content === 'string');
+  } catch { return []; } // 文件不存在 / 解析失败：视作空，不阻塞页面
+}
+
+function writeCustomTemplates(list) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = CUSTOM_TEMPLATES_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(list, null, 2), 'utf8');
+  fs.renameSync(tmp, CUSTOM_TEMPLATES_FILE); // 原子替换，避免留下半截文件
 }
 
 // ── 作业（单飞：一次只跑一个，避免日志串台） ────────────────────
@@ -323,13 +378,51 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 邮件发送配置（只回传是否可用与收件人，不含口令）
+    if (pathname === '/api/mail' && method === 'GET') {
+      sendJson(res, 200, { mail: publicMailConfig() });
+      return;
+    }
+
     if (pathname === '/api/templates' && method === 'GET') {
-      const out = {};
-      for (const f of ['A.md', 'B.md', 'C.md']) {
-        const p = safeJoin(TEMPLATES_DIR, f);
-        if (p && fs.existsSync(p)) out[f.replace('.md', '')] = fs.readFileSync(p, 'utf8');
+      sendJson(res, 200, { templates: builtinTemplates(), custom: readCustomTemplates() });
+      return;
+    }
+
+    // 新增自定义模板并持久化到 data/templates.json
+    if (pathname === '/api/templates' && method === 'POST') {
+      let body = {};
+      try { body = JSON.parse((await readBody(req)) || '{}'); } catch { /* ignore */ }
+      const name = String(body.name == null ? '' : body.name).trim();
+      const content = String(body.content == null ? '' : body.content);
+      if (!name) { sendJson(res, 400, { error: '请填模板名称' }); return; }
+      if (name.length > 40) { sendJson(res, 400, { error: '模板名称过长（≤40 字）' }); return; }
+      if (!content.trim()) { sendJson(res, 400, { error: '模板内容不能为空' }); return; }
+      if (content.length > MAX_TEMPLATE_CONTENT) {
+        sendJson(res, 400, { error: `模板内容过长（≤${MAX_TEMPLATE_CONTENT} 字）` });
+        return;
       }
-      sendJson(res, 200, { templates: out });
+      const list = readCustomTemplates();
+      const builtin = builtinTemplates();
+      if (Object.prototype.hasOwnProperty.call(builtin, name) || list.some(t => t.name === name)) {
+        sendJson(res, 409, { error: `模板名称「${name}」已存在` });
+        return;
+      }
+      const tpl = { id: crypto.randomBytes(8).toString('hex'), name, content, createdAt: new Date().toISOString() };
+      list.push(tpl);
+      writeCustomTemplates(list);
+      sendJson(res, 200, { ok: true, template: tpl });
+      return;
+    }
+
+    // 删除自定义模板（内置 A/B/C 不可删）
+    const dm = pathname.match(/^\/api\/templates\/([a-f0-9]+)$/);
+    if (dm && method === 'DELETE') {
+      const list = readCustomTemplates();
+      const next = list.filter(t => t.id !== dm[1]);
+      if (next.length === list.length) { sendJson(res, 404, { error: '模板不存在' }); return; }
+      writeCustomTemplates(next);
+      sendJson(res, 200, { ok: true });
       return;
     }
 
@@ -356,6 +449,29 @@ const server = http.createServer(async (req, res) => {
       if (!file) { sendJson(res, 400, { error: 'bad path' }); return; }
       const dl = u.searchParams.get('download');
       serveFile(res, file, { downloadName: dl ? path.basename(file) : undefined });
+      return;
+    }
+
+    // /api/reports/:dir/send  自动发送举报邮件（前端二次确认；服务端防重复投递）
+    m = pathname.match(/^\/api\/reports\/([^/]+)\/send$/);
+    if (m && method === 'POST') {
+      try { await readBody(req); } catch { /* 无 body 也允许 */ }
+      const dir = safeJoin(REPORTS_DIR, decodeURIComponent(m[1]));
+      if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+        sendJson(res, 404, { error: '报告不存在' });
+        return;
+      }
+      try {
+        const r = await sendReportEmail(dir);
+        sendJson(res, 200, { ok: true, ...r, mail: publicMailConfig() });
+      } catch (e) {
+        const status = e && e.status ? e.status : 500;
+        sendJson(res, status, {
+          error: (e && e.message) || '发送失败',
+          code: (e && e.code) || 'mail-error',
+          send: sendState(dir),
+        });
+      }
       return;
     }
 
@@ -438,5 +554,5 @@ fs.mkdirSync(REPORTS_DIR, { recursive: true });
 server.listen(PORT, () => {
   console.log(`[web] 举报工具已启动：http://localhost:${PORT}`);
   console.log(`[web] 报告目录：${REPORTS_DIR}`);
-  console.log('[web] 发送环节仍由人工完成（防重复投递铁律）。');
+  console.log('[web] 默认人工发送；结果页可选自动发送（需配置 SMTP，成功后禁止重发）。');
 });

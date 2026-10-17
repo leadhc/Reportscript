@@ -4,7 +4,9 @@
 （侦察 → DNS → whois → 备案 → 地形/指纹 → 渲染截图 → 生成举报信）包成 HTTP 接口，
 进度实时推给浏览器，结果可在线查看 / 复制 / 下载。
 
-> 纪律不变：**只生成材料，绝不自动发邮件**（规格书 5.2 防重复投递铁律）。
+> 发送纪律：默认只生成材料；结果页由用户自行选择「复制正文手动发送」或
+> 「自动发送邮件」（需先配置 SMTP）。自动发送必须二次确认，成功后写入报告目录
+> 的 `send.json`，同一报告禁止重复投递（规格书 5.2）。
 
 ---
 
@@ -21,6 +23,41 @@ npm start                         # 默认 http://localhost:10000
 
 - 未设 `APP_PASSWORD` 时，启动日志会打印一个**临时随机口令**（重启会变，仅方便本地调试）。
 - 端口用环境变量 `PORT` 改；Windows 本机渲染默认走 Edge。
+- 需要 Node.js 20+（nodemailer 10 的安全修复版本要求）。
+
+### 1.1 自动发送邮件（可选）
+
+不配置 SMTP 时，结果页只提供「复制正文（手动发送）」；配置后额外出现「自动发送邮件」按钮。
+取证完成后，取证区的操作行也会出现同一个「自动发送邮件」按钮——它发送的就是本次刚完成的报告。
+发送前浏览器会二次确认收件人、主题与附件数量，服务端还有一层防重复投递锁。
+
+| 环境变量 | 必填 | 说明 |
+|---|---|---|
+| `SMTP_HOST` | 是 | SMTP 服务器地址 |
+| `SMTP_PORT` | 否 | 默认 `465` |
+| `SMTP_SECURE` | 否 | 默认 465 端口为 `true`；用 587 STARTTLS 时设为 `false` |
+| `SMTP_USER` / `SMTP_PASS` | 视服务商 | 需要认证时填写；只填用户不填口令视为未配置 |
+| `MAIL_FROM` | 是 | 发件人；未设置时回退为 `SMTP_USER` |
+| `MAIL_TO` | 否 | 默认 `moment@tencent.com` |
+| `MAIL_REPLY_TO` | 否 | 回复地址 |
+| `MAIL_MAX_ATTACH_MB` | 否 | 附件总大小上限，默认 `20` |
+
+发送行为：
+
+- 正文取举报信里「## 正文」段，取证底档不会进邮件；
+- 附件为报告目录里的首屏 / 整页截图，**没有截图拒绝发送**；
+- 成功后写 `send.json` 与 `email-body.txt`，该报告按钮变为「已发送」并禁用；
+- 失败写 `send-attempt.json`（状态 / 错误），可人工确认后重试；
+- 发送锁 `send.lock` 防止并发重复投递，进程异常退出超过 5 分钟自动失效。
+
+```powershell
+$env:SMTP_HOST = "smtp.example.com"
+$env:SMTP_PORT = "465"
+$env:SMTP_USER = "report@example.com"
+$env:SMTP_PASS = "你的SMTP授权码"
+$env:MAIL_FROM = "report@example.com"
+npm start
+```
 
 ---
 
@@ -78,10 +115,14 @@ git push -u origin main
 | POST | `/api/login` | `{password}` → 下发会话 Cookie |
 | POST | `/api/logout` | 退出 |
 | GET | `/api/session` | 是否已登录 |
-| GET | `/api/templates` | 返回模板 A/B/C 原文（只读） |
+| GET | `/api/mail` | 邮件发送配置（是否可用 / 收件人，不含口令） |
+| GET | `/api/templates` | 返回内置模板 A/B/C 原文与自定义模板列表 |
+| POST | `/api/templates` | `{name, content}` → 新增自定义模板（持久化到 `data/templates.json`） |
+| DELETE | `/api/templates/:id` | 删除自定义模板 |
 | GET | `/api/reports` | 历史报告列表 |
-| GET | `/api/reports/:dir` | 单份报告详情（含举报信 markdown、report.json、附件清单） |
+| GET | `/api/reports/:dir` | 单份报告详情（含举报信 markdown、report.json、附件清单、发送状态） |
 | GET | `/api/reports/:dir/artifact/:name` | 取附件；加 `?download=1` 触发下载 |
+| POST | `/api/reports/:dir/send` | 自动发送举报邮件（需 SMTP；成功后写 `send.json`，重复调用返回 409） |
 | POST | `/api/run` | `{url, render, terrain, beianRemote}` → `{jobId}` |
 | GET | `/api/job/:id` | 任务状态与结果 |
 | GET | `/api/job/:id/events` | 进度 SSE 流 |
@@ -94,6 +135,8 @@ git push -u origin main
 - 本工具会**按你给的 URL 去抓取任意站点**（含 whois / 备案查询）。**务必设口令并保持私有**，
   否则等于对外开了一个抓取代理。
 - 口令通过 `APP_PASSWORD` 注入，不写进仓库；会话用 HttpOnly + SameSite=Lax Cookie。
+- SMTP 口令只从环境变量读取，不落盘、不写进 report.json、不回传前端。
+- 自动发送是**不可撤回**操作：发送前会二次确认，成功后同一报告禁止重发。
 - 免费平台上建议只做自用；不要公开分享链接。
 
 ---
@@ -107,5 +150,7 @@ node cli.js "<URL>"            # 全流程
 node cli.js "<URL>" --no-render
 node cli.js letter <report.json>
 node cli.js probe "<URL>"
-npm test                       # 离线测试集（17 项，不联网）
+npm test                       # 离线测试集（不联网）
 ```
+
+> 命令行不发送邮件；自动发送只在 Web 结果页提供（需配置 SMTP）。

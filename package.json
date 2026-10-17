@@ -11,9 +11,10 @@
     "test": "node fixtures/run.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
+    "nodemailer": "^10.1.2",
     "playwright": "^1.64.0"
   }
 }

@@ -29,6 +29,7 @@ const {
 } = require('../lib/letter');
 const { extractPaidQuotes } = require('../lib/render');
 const { localScan } = require('../lib/beian');
+const { parseLetterMarkdown, sendState } = require('../lib/mailer');
 
 // ── 微型 runner ────────────────────────────────────────────────
 
@@ -547,6 +548,52 @@ test('reports 清理：只保留最近 10 份，非记录目录/文件不动', (
     assert.ok(fs.existsSync(path.join(tmp, 'notes.txt')), '非目录不得删除');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// 9. 邮件发送：正文解析 / 发送状态
+test('邮件正文解析：主题正确，取证底档不进邮件', () => {
+  const md = [
+    '# 举报信 · example.com',
+    '',
+    '- **收件人**：moment@tencent.com',
+    '- **主题**：违规链接举报反馈【example.com / example-b.com】',
+    '',
+    '---',
+    '',
+    '## 正文（复制以下内容到邮件正文）',
+    '',
+    '第一段正文。',
+    '',
+    '第二段正文。',
+    '',
+    '---',
+    '',
+    '## 取证底档（供核对，不进邮件正文）',
+    '',
+    '| 项目 | 结果 |',
+  ].join('\n');
+  const { subject, body } = parseLetterMarkdown(md);
+  assert.strictEqual(subject, '违规链接举报反馈【example.com / example-b.com】');
+  assert.strictEqual(body, '第一段正文。\n\n第二段正文。');
+  assert.ok(!body.includes('取证底档'), '底档不得进邮件正文');
+  assert.ok(!body.includes('| 项目 | 结果 |'), '底档表格不得进邮件正文');
+});
+
+test('发送状态：无记录为 none，send.json 优先判定为 sent', () => {
+  const dir = tmpOutDir();
+  try {
+    assert.strictEqual(sendState(dir).state, 'none');
+    fs.writeFileSync(path.join(dir, 'send.json'), JSON.stringify({
+      status: 'sent', sentAt: '2026-10-17T02:00:00.000Z',
+      to: 'moment@tencent.com', subject: 'x', messageId: '<m@x>',
+    }));
+    const st = sendState(dir);
+    assert.strictEqual(st.state, 'sent');
+    assert.strictEqual(st.to, 'moment@tencent.com');
+    assert.strictEqual(st.messageId, '<m@x>');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

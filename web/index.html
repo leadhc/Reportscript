@@ -1,79 +1,102 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>微信违规链接举报工具</title>
-<link rel="stylesheet" href="/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>微信违规链接举报工具</title>
+  <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
 
-<!-- 登录 -->
-<div id="login" class="login-wrap hidden">
-  <form id="login-form" class="login-card">
-    <h1>微信违规链接举报工具</h1>
-    <p class="muted">请输入访问口令</p>
-    <input id="password" type="password" placeholder="访问口令" autocomplete="current-password" autofocus>
-    <button type="submit" class="btn primary">登录</button>
-    <p id="login-error" class="err"></p>
-  </form>
-</div>
+  <!-- 登录 -->
+  <div id="login" class="login-wrap hidden">
+    <form id="login-form" class="login-card">
+      <h1>微信违规链接举报工具</h1>
+      <p class="muted">请输入访问口令</p>
+      <input id="password" type="password" placeholder="访问口令" autocomplete="current-password" autofocus>
+      <button type="submit" class="btn primary">登录</button>
+      <p id="login-error" class="err"></p>
+    </form>
+  </div>
 
-<!-- 主体 -->
-<div id="app" class="hidden">
-  <header class="topbar">
-    <div class="brand">举报工具 <span class="tag">report-tool</span></div>
-    <nav class="tabs">
-      <button class="tab active" data-view="run">取证</button>
-      <button class="tab" data-view="history">历史报告</button>
-      <button class="tab" data-view="templates">模板</button>
-    </nav>
-    <button id="logout" class="btn ghost">退出</button>
-  </header>
+  <!-- 主体 -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand">举报工具 <span class="tag">report-tool</span></div>
+      <nav class="tabs">
+        <button class="tab active" data-view="run">取证</button>
+        <button class="tab" data-view="history">历史报告</button>
+        <button class="tab" data-view="templates">模板</button>
+      </nav>
+      <button id="logout" class="btn ghost">退出</button>
+    </header>
 
-  <main>
-    <!-- 取证 -->
-    <section id="view-run" class="view">
-      <form id="run-form" class="card">
-        <label class="lbl">目标 URL（含投放参数请完整粘贴）</label>
-        <input id="url" type="text" placeholder="http://example.com/path/?channel=...&amp;account_id=..." spellcheck="false">
-        <div class="opts">
-          <label class="chk"><input id="opt-render" type="checkbox" checked> 渲染截图（Playwright）</label>
-          <label class="chk"><input id="opt-terrain" type="checkbox" checked> 地形/指纹比对</label>
-          <label class="chk"><input id="opt-beian" type="checkbox" checked> 远程备案渠道</label>
+    <main>
+      <!-- 取证 -->
+      <section id="view-run" class="view">
+        <form id="run-form" class="card">
+          <label class="lbl">目标 URL（含投放参数请完整粘贴）</label>
+          <input id="url" type="text" placeholder="http://example.com/path/?channel=...&amp;account_id=..."
+            spellcheck="false">
+          <div class="opts">
+            <label class="chk"><input id="opt-render" type="checkbox" checked> 渲染截图（Playwright）</label>
+            <label class="chk"><input id="opt-terrain" type="checkbox" checked> 地形/指纹比对</label>
+            <label class="chk"><input id="opt-beian" type="checkbox" checked> 远程备案渠道</label>
+          </div>
+          <div class="row">
+            <button id="run-btn" type="button" class="btn primary" data-state="idle">开始取证</button>
+            <button id="run-send-btn" type="button" class="btn danger hidden" title="发送本次取证生成的举报报告">自动发送邮件</button>
+            <span id="run-status" class="muted"></span>
+          </div>
+          <div id="run-send-hint" class="alert hidden"></div>
+          <p class="muted small">默认只生成材料；结果页可复制正文人工发送，也可在配置 SMTP 后一键自动发送（发送前二次确认，已发送报告禁止重发）。</p>
+        </form>
+
+        <details id="log-wrap" class="card" open>
+          <summary>实时进度</summary>
+          <pre id="run-log" class="log"></pre>
+        </details>
+
+        <div id="result"></div>
+      </section>
+
+      <!-- 历史 -->
+      <section id="view-history" class="view hidden">
+        <div id="history" class="card">
+          <p class="muted">加载中…</p>
         </div>
-        <div class="row">
-          <button id="run-btn" type="button" class="btn primary" data-state="idle">开始取证</button>
-          <span id="run-status" class="muted"></span>
+        <div id="history-detail"></div>
+      </section>
+
+      <!-- 模板 -->
+      <section id="view-templates" class="view hidden">
+        <div class="card">
+          <p class="muted small">模板骨架为固定文案，举报信必须逐字沿用，不得改写。内置 A/B/C 只读；自定义模板保存在服务端，刷新或重开页面仍在。</p>
+          <div id="template-tabs" class="subtabs"></div>
+          <pre id="template-body" class="log tall"></pre>
+          <div id="template-actions" class="toolbar"></div>
         </div>
-        <p class="muted small">只生成材料，<b>不发送邮件</b>；发送请人工按信中步骤执行（防重复投递）。</p>
-      </form>
 
-      <details id="log-wrap" class="card" open>
-        <summary>实时进度</summary>
-        <pre id="run-log" class="log"></pre>
-      </details>
+        <details class="card" id="template-add-wrap">
+          <summary>＋ 添加模板</summary>
+          <div class="addtpl">
+            <label class="lbl">模板名称（如 D、或「迷信类·定制」）</label>
+            <input id="tpl-name" type="text" placeholder="模板名称" spellcheck="false" maxlength="40">
+            <label class="lbl">模板内容</label>
+            <textarea id="tpl-content" rows="12" placeholder="粘贴 / 输入模板正文…" spellcheck="false"></textarea>
+            <div class="row">
+              <button id="tpl-add-btn" type="button" class="btn primary">添加模板</button>
+              <span id="tpl-add-status" class="muted small"></span>
+            </div>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
 
-      <div id="result"></div>
-    </section>
-
-    <!-- 历史 -->
-    <section id="view-history" class="view hidden">
-      <div id="history" class="card"><p class="muted">加载中…</p></div>
-      <div id="history-detail"></div>
-    </section>
-
-    <!-- 模板 -->
-    <section id="view-templates" class="view hidden">
-      <div class="card">
-        <p class="muted small">模板骨架为固定文案，举报信必须逐字沿用，不得改写。</p>
-        <div id="template-tabs" class="subtabs"></div>
-        <pre id="template-body" class="log tall"></pre>
-      </div>
-    </section>
-  </main>
-</div>
-
-<script src="/app.js"></script>
+  <script src="/app.js"></script>
 </body>
+
 </html>

@@ -443,6 +443,8 @@ async function runFullInner(inputUrl, opts) {
   report.template = probe && probe.template;
   const [letter, lErr] = await stage('信件', () => generateLetter(report, outDir));
   if (letter) {
+    // 把出信结果并入底档：Web 历史报告与发送前预览都以此为准（多域主题行）
+    report.letter = letter;
     log('信件', `已写入 ${letter.file}`);
     log('信件', `模板：${letter.template} · 主题：${letter.subjectLine}`);
     if (letter.unresolvedSlots.length) {
@@ -508,7 +510,7 @@ function printSummary(report, ctx) {
   if (ctx.failures.length) emit(`\n降级阶段      : ${ctx.failures.join('；')}\n`);
 
   emit('\n════════════ ⚠ 发送环节请人工操作 ═════════════\n');
-  emit(`\n本工具只生成材料，不发送邮件。请按以下步骤人工发送（规格书第 5 节）：\n`);
+  emit(`\n命令行只生成材料，不发送邮件（Web 结果页可选自动发送）。请按以下步骤人工发送（规格书第 5 节）：\n`);
   emit(`  1. 收件人：moment@tencent.com\n`);
   emit(`  2. 主题  ：${ctx.letter ? ctx.letter.subjectLine : `违规链接举报反馈【${domPart}】`}\n`);
   emit(`  3. 正文  ：复制「正文」段到邮件正文，逐字不改骨架\n`);

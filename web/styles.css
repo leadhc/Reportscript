@@ -28,6 +28,8 @@ input[type=text],input[type=password]{
   font-size:14px;background:#fff;color:var(--text);outline:none;
 }
 input[type=text]:focus,input[type=password]:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:12.5px/1.7 ui-monospace,Consolas,"Courier New",monospace;background:#fff;color:var(--text);outline:none;resize:vertical}
+textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 .btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:9px 14px;border-radius:8px;cursor:pointer;font-size:14px}
 .btn:hover{background:#f0f2f5}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
@@ -43,9 +45,15 @@ input[type=text]:focus,input[type=password]:focus{border-color:var(--primary);bo
 .tab{border:none;background:transparent;padding:8px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:14px}
 .tab:hover{background:#eef1f5;color:var(--text)}
 .tab.active{background:#e8effe;color:var(--primary);font-weight:600}
-.subtabs{display:flex;gap:6px;margin-bottom:10px}
+.subtabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
 .subtab{border:1px solid var(--line);background:#fff;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px}
 .subtab.active{background:var(--primary);border-color:var(--primary);color:#fff}
+
+/* 模板：添加表单 */
+#template-actions{margin-top:10px}
+.addtpl{margin-top:10px}
+.addtpl .lbl{margin-top:12px}
+.addtpl #tpl-name{margin-top:0}
 
 main{max-width:1080px;margin:0 auto;padding:20px}
 .view{display:block}
@@ -107,7 +115,7 @@ img{max-width:100%;height:auto}
   main{padding:12px}
   .card{padding:13px;border-radius:10px;margin-bottom:12px}
   /* 输入框 ≥16px，避免 iOS 聚焦自动放大 */
-  input[type=text],input[type=password]{font-size:16px;padding:11px 12px}
+  input[type=text],input[type=password],textarea{font-size:16px;padding:11px 12px}
   .opts{gap:10px 14px}
   .chk{font-size:14px;padding:2px 0}
   .row{flex-wrap:wrap;gap:10px}
