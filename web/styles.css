@@ -73,6 +73,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px}
 .meta .k{color:var(--muted);margin-right:6px}
 .alert{border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin:8px 0;background:#f8fafc}
 .alert.warn{background:var(--warn-bg);border-color:#fcd34d;color:var(--warn)}
+.alert.success{background:#ecfdf5;border-color:#6ee7b7;color:#047857}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .sec{margin-top:14px}
 .sec h3{font-size:14px;margin:0 0 6px;color:#334155}

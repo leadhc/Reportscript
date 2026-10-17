@@ -46,9 +46,15 @@ npm start                         # 默认 http://localhost:10000
 
 - 正文取举报信里「## 正文」段，取证底档不会进邮件；
 - 附件为报告目录里的首屏 / 整页截图，**没有截图拒绝发送**；
-- 成功后写 `send.json` 与 `email-body.txt`，该报告按钮变为「已发送」并禁用；
+- 成功后写 `send.json` 与 `email-body.txt`，两处按钮都变为「已发送邮件」并禁用；
+- 发送结果会显示在取证区状态、按钮旁提示和结果卡片：成功为绿色（含 messageId），失败为黄色并显示 SMTP 错误；
+- SMTP 明确拒收全部收件人时按失败处理，不写 `send.json`，避免「显示成功但对方没收到」；
 - 失败写 `send-attempt.json`（状态 / 错误），可人工确认后重试；
 - 发送锁 `send.lock` 防止并发重复投递，进程异常退出超过 5 分钟自动失效。
+
+> 邮件收件人是 `MAIL_TO`（默认 `moment@tencent.com`），不是发件 QQ 邮箱。
+> SMTP 发送不会自动在 QQ 邮箱「已发送」里留副本；如需给自己留一份，可设置
+> `MAIL_TO=moment@tencent.com,你的邮箱@qq.com`。
 
 ```powershell
 $env:SMTP_HOST = "smtp.example.com"

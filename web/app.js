@@ -237,6 +237,7 @@ function mailUiState(s) {
   const sending = mail.state === 'sending';
   const attachCount = Number(mail.attachmentCount || 0);
   const configured = !!mail.configured;
+  const rejected = Array.isArray(mail.rejected) ? mail.rejected : [];
   const canSend = !!(s && s.letterFile) && configured && attachCount > 0 && !sent && !sending;
   const to = mail.to || mailConfig.to || 'moment@tencent.com';
 
@@ -244,9 +245,11 @@ function mailUiState(s) {
   let hintClass = 'alert';
   let hint;
   if (sent) {
-    label = '已发送';
+    label = '已发送邮件';
+    hintClass = rejected.length ? 'alert warn' : 'alert success';
     hint = `已于 ${mail.sentAt || '—'} 自动发送至 ${to}`
       + `${mail.messageId ? `（messageId: ${mail.messageId}）` : ''}`;
+    if (rejected.length) hint += `；以下收件人被 SMTP 拒绝：${rejected.join('、')}`;
   } else if (sending) {
     label = '发送中…';
     hint = `正在发送至 ${to}，请稍候…`;
@@ -426,22 +429,47 @@ async function sendReport(s, btn, statusEl) {
   // 进入发送中：结果卡片与取证区按钮同步禁用
   s.mail = { ...mail, state: 'sending' };
   renderSendState(btn, status, mailUiState(s));
-  if (isCurrentReport(s)) refreshCurrentResultSendUi(s);
+  if (isCurrentReport(s)) {
+    const runStatus = $('#run-status');
+    if (runStatus) runStatus.textContent = '正在发送邮件…';
+    refreshCurrentResultSendUi(s);
+  }
 
   try {
     const r = await api(`/api/reports/${encodeURIComponent(s.outDirName)}/send`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
-    s.mail = { ...(s.mail || {}), state: 'sent', sentAt: r.sentAt, messageId: r.messageId };
+    s.mail = {
+      ...(s.mail || {}),
+      state: 'sent',
+      sentAt: r.sentAt,
+      messageId: r.messageId,
+      to: r.to || ui.to,
+      accepted: r.accepted || [],
+      rejected: r.rejected || [],
+      response: r.response || null,
+    };
     renderSendState(btn, status, mailUiState(s));
-    if (isCurrentReport(s)) refreshCurrentResultSendUi(s);
+    if (isCurrentReport(s)) {
+      refreshCurrentResultSendUi(s);
+      const runStatus = $('#run-status');
+      if (runStatus) {
+        runStatus.textContent = (r.rejected && r.rejected.length)
+          ? '邮件已发送（部分收件人被拒绝）'
+          : '邮件已发送';
+      }
+    }
     toast('邮件已发送');
   } catch (err) {
     s.mail = { ...(s.mail || {}), state: 'failed', sendError: err.message };
     renderSendState(btn, status, mailUiState(s));
-    if (isCurrentReport(s)) refreshCurrentResultSendUi(s);
-    toast('发送失败：' + err.message);
+    if (isCurrentReport(s)) {
+      refreshCurrentResultSendUi(s);
+      const runStatus = $('#run-status');
+      if (runStatus) runStatus.textContent = '邮件发送失败：' + err.message;
+    }
+    toast('邮件发送失败：' + err.message);
   }
 }
 

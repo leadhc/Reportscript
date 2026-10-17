@@ -212,6 +212,9 @@ function summarizeDir(dir) {
     messageId: send.messageId || null,
     startedAt: send.startedAt || null,
     sendError: send.error || null,
+    accepted: send.accepted || [],
+    rejected: send.rejected || [],
+    response: send.response || null,
   };
 
   return {
